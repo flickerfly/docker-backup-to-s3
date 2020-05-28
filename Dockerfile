@@ -8,5 +8,6 @@ RUN apk update && \
     rm -rf /var/cache/apk/*
 
 ADD app /app
+ADD Dockerfile /
 
 ENTRYPOINT ["/app/start.sh"]
