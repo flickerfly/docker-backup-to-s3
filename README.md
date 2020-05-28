@@ -87,3 +87,79 @@ docker run --rm \
   -v /home/user/data:/data \
   flickerfly/backup-to-s3 restore
 ```
+
+Create a simple backup of a single Kubernetes persistent volume claim:
+
+```bash
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-to-s3
+  labels:
+    role: backup
+data:
+  CRON_SCHEDULE: '0 12 * * *'
+  S3_PATH: s3://mybucketname/bedrock/
+  AWS_DEFAULT_REGION: us-east-1
+  # Pass this to the S3 command
+  PARAMS: ""
+  PREFIX: bedrock
+  DATA_PATH: /data/
+
+---
+# Be sure to Base64 encrypt your secrets before entering
+# Example: echo -n "secret" | base64
+apiVersion: v1
+kind: Secret
+metadata:
+  name: backup-to-s3
+  labels:
+    role: backup
+data:
+  AES_PASSPHRASE: XXXXXXXX
+  AWS_ACCESS_KEY_ID: XXXXXXX
+  AWS_SECRET_ACCESS_KEY: XXXXXXXX
+
+---
+# Setup the Deployment of a pod that will do the work.
+# Note: We mount the pvc read only, so this can not do a restore or otherwise corrupt your volume.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bds-pvc-backup
+  labels:
+    role: backup
+    app: bedrock
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      role: backup
+      app: bedrock
+  template:
+    metadata:
+      labels:
+        app: bedrock
+        role: backup
+    spec:
+      containers:
+        - name: backup-to-s3
+          image: jritchie/backup-to-s3
+          args: 
+            - schedule
+          volumeMounts:
+            - name: bds
+              mountPath: /data
+          envFrom:
+            - configMapRef:
+                name: backup-to-s3
+            - secretRef:
+                name: backup-to-s3
+      volumes:
+        - name: bds
+          persistentVolumeClaim:
+            claimName: bds
+            readOnly: true
+```
